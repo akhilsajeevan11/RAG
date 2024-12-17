@@ -10,8 +10,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 import glob
 from dotenv import load_dotenv
-from prompt import prompt_template
+from prompt import prompt_template, follow_up_prompt, relevancy_prompt
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from typing import Dict, List
 
 app = Flask(__name__)
 
@@ -35,12 +36,12 @@ PROMPT = PromptTemplate(
 # Initialize empty dictionary for topic chains
 topic_chains = {}
 
-def setup_qa_chain(vectorstore, prompt):
+def setup_qa_chain(vectorstore, PROMPT):
     # Initialize the language model
     llm = ChatGoogleGenerativeAI(
         model="gemini-pro",
         google_api_key=GOOGLE_API_KEY,
-        temperature=0.3
+        temperature=0.1
     )
     
     # Create the QA chain
@@ -49,7 +50,7 @@ def setup_qa_chain(vectorstore, prompt):
         chain_type="stuff",
         retriever=vectorstore.as_retriever(),
         return_source_documents=True,
-        chain_type_kwargs={"prompt": prompt}
+        chain_type_kwargs={"prompt": PROMPT, "verbose": True}
     )
     
     return qa_chain
@@ -96,6 +97,10 @@ def process_pdfs(pdf_directory):
         
     vectorstore = FAISS.from_documents(texts, embeddings)
     return vectorstore
+
+
+chat_histories: Dict[str, List[dict]] = {}
+
 
 @app.route('/', methods=['GET'])
 def index():
@@ -158,8 +163,50 @@ def ask_question():
             
         if topic not in topic_chains:
             return jsonify({"error": "Invalid topic"}), 400
-        
-        result = topic_chains[topic]({"query": question})
+
+        # Initialize chat history for topic if it doesn't exist
+        if topic not in chat_histories:
+            chat_histories[topic] = []
+
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-pro",
+            google_api_key=GOOGLE_API_KEY,
+            temperature=0
+        )
+
+        # Check for follow-up FIRST
+        is_follow_up = llm.predict(follow_up_prompt.format(
+            question=question
+        )).strip().lower() == 'yes'
+
+        if is_follow_up and chat_histories[topic]:
+            # Get the last question and its context
+            last_question = chat_histories[topic][-1]["question"]
+            # Combine previous question with the follow-up request
+            enhanced_question = f"{last_question} {question}"
+            result = topic_chains[topic]({"query": enhanced_question})
+        else:
+            # Only check relevancy for new questions, not follow-ups
+            relevancy_check = llm.predict(relevancy_prompt.format(
+                topic=topic,
+                question=question
+            )).strip().lower()
+            
+            if relevancy_check != 'yes':
+                return jsonify({
+                    "answer": f"I apologize, but this question doesn't seem to be related to {topic}. Please ask a question about {topic} or switch to a more relevant topic.",
+                    "word_count": 0,
+                    "sources": []
+                })
+            
+            result = topic_chains[topic]({"query": question})
+
+        # Store only new questions in chat history, not follow-ups
+        if not is_follow_up:
+            chat_histories[topic].append({
+                "question": question,
+                "answer": result["result"]
+            })
         
         word_count = len(result["result"].split())
         
@@ -176,13 +223,10 @@ def ask_question():
             "sources": sources,
             "topic": topic
         }
-
         print("Response is...", response)
-        print(f"Response word count: {word_count}")
-
+        print("Chat history is...", chat_histories)
+        print("Word count is...", word_count)
         return jsonify(response)
-    
-    
         
     except Exception as e:
         print(f"Error occurred: {str(e)}")

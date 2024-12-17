@@ -6,11 +6,14 @@ function loadTopics() {
         .then(response => response.json())
         .then(data => {
             const topicButtons = document.querySelector('.topic-buttons');
+            topicButtons.innerHTML = ''; // Clear existing buttons
+            
             data.topics.forEach(topic => {
                 const button = document.createElement('button');
                 button.className = 'topic-button';
                 button.onclick = () => selectTopic(topic);
-                button.textContent = topic;
+                // Format the display text (replace underscores with spaces)
+                button.textContent = topic.replace(/_/g, ' ');
                 topicButtons.appendChild(button);
             });
         })
@@ -18,7 +21,10 @@ function loadTopics() {
 }
 
 // Load topics when the page loads
-document.addEventListener('DOMContentLoaded', loadTopics);
+document.addEventListener('DOMContentLoaded', () => {
+    loadTopics();
+    initializeUI();
+});
 
 document.getElementById('send-button').addEventListener('click', sendMessage);
 document.getElementById('user-input').addEventListener('keypress', function(e) {
@@ -39,27 +45,29 @@ function createLoadingIndicator() {
 }
 
 function addMessage(message, isUser = false) {
-    const messagesDiv = document.getElementById('chat-messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
     
     if (typeof message === 'object') {
-        // Bot message with sources
-        messageDiv.innerHTML = `
-            ${message.answer}
-            <div class="sources">
-                <i class="fas fa-book"></i> Sources: ${message.sources.map(source => 
-                    `Page ${source.page} from ${source.source.split('/').pop()}`
-                ).join(', ')}
-            </div>
-        `;
+        let messageContent = message.answer;
+        
+        // Only add sources section if sources exist and are not empty
+        if (message.sources && message.sources.length > 0) {
+            messageContent += `
+                <div class="sources">
+                    <i class="fas fa-book"></i> Sources: ${message.sources.map(source => 
+                        `Page ${source.page} from ${source.source.split('/').pop()}`
+                    ).join(', ')}
+                </div>`;
+        }
+        
+        messageDiv.innerHTML = messageContent;
     } else {
-        // User message
         messageDiv.textContent = message;
     }
     
-    messagesDiv.appendChild(messageDiv);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    document.getElementById('chat-messages').appendChild(messageDiv);
+    messageDiv.scrollIntoView({ behavior: 'smooth' });
 }
 
 function sendMessage() {
@@ -112,15 +120,34 @@ function sendMessage() {
 }
 
 function selectTopic(topic) {
+    // Remove active class from all buttons
+    document.querySelectorAll('.topic-button').forEach(button => {
+        button.classList.remove('active');
+    });
+
+    // Add active class to selected button
+    const selectedButton = Array.from(document.querySelectorAll('.topic-button'))
+        .find(button => button.textContent === topic);
+    if (selectedButton) {
+        selectedButton.classList.add('active');
+    }
+
     currentTopic = topic;
     
-    // Add loading indicator
+    // Clear previous chat messages
     const messagesDiv = document.getElementById('chat-messages');
+    const welcomeMessage = document.querySelector('.welcome-message');
+    // Keep the welcome message but clear the rest
+    Array.from(messagesDiv.children)
+        .filter(child => child !== welcomeMessage)
+        .forEach(child => child.remove());
+    
+    // Add loading indicator
     const loadingIndicator = createLoadingIndicator();
     messagesDiv.appendChild(loadingIndicator);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
     
-    // First, initialize the topic
+    // Initialize the topic
     fetch('/initialize-topic', {
         method: 'POST',
         headers: {
@@ -134,8 +161,14 @@ function selectTopic(topic) {
         loadingIndicator.remove();
         
         if (data.success) {
-            addMessage(`Selected topic: ${topic}`, true);
-            addMessage(`Topic initialized. You can now ask questions about ${topic}.`);
+            // Simple welcome message with topic name
+            const welcomeText = `Topic initialized. You can now ask questions about ${topic}.`;
+            
+            addMessage(welcomeText, false);
+
+            // Enable input field
+            document.getElementById('user-input').disabled = false;
+            document.getElementById('user-input').placeholder = `Ask a question about ${topic}...`;
         } else {
             addMessage(`Error initializing topic: ${data.error}`, false);
         }
@@ -147,4 +180,12 @@ function selectTopic(topic) {
         console.error('Error:', error);
         addMessage('Sorry, there was an error initializing the topic.');
     });
+}
+
+// Add this function to handle initial UI state
+function initializeUI() {
+    // Disable input field until topic is selected
+    const inputField = document.getElementById('user-input');
+    inputField.disabled = true;
+    inputField.placeholder = 'Please select a topic first...';
 }
