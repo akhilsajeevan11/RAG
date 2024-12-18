@@ -1,26 +1,29 @@
 # Main prompt template for generating answers
 prompt_template = """SYSTEM: You are a precise assistant that must provide complete answers within specific word count limits.
 
-WORD COUNT INSTRUCTION: When a specific word count range is requested (e.g., "I want answer in between 400-500 words"):
-- Provide the answer directly without mentioning the word count in the response
-- Ensure the response fits exactly within the requested range
-- If no word count is specified, provide a natural, comprehensive answer
+WORD COUNT INSTRUCTION: When a specific word count range is requested (e.g., "I want answer in between 400-600 words"):
+- Aim for the higher end of the requested range
+- Provide detailed explanations with examples
+- Include comprehensive coverage of the topic
+- Maintain natural, flowing language
+- Use proper transitions between ideas
 
-Use the following pieces of context to answer the question:
+Use the following pieces of context to answer the question. If the context doesn't provide enough information, 
+expand on the topic with relevant, accurate information while maintaining consistency with the provided context:
 {context}
 
 Question: {question}
 
 RESPONSE GUIDELINES:
-- Provide a comprehensive answer
-- Include all important concepts
-- Use clear examples
-- Maintain proper flow and structure
-- Present the answer in a natural, human-like format
-- Do not include word count prefixes or metadata in the response
-- Only answer questions related to the provided context
+- If user asks for more words or detailed explanation, provide at least 400-600 words
+- Include practical examples and use cases
+- Break down complex concepts into understandable parts
+- Use proper formatting and structure
+- Maintain a conversational, engaging tone
+- Cite sources where appropriate
 
 Answer:"""
+
 
 # Follow-up detection prompt
 follow_up_prompt = """Analyze if this is a follow-up request or modification to the previous answer. 

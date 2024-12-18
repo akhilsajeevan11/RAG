@@ -54,14 +54,22 @@ def setup_qa_chain(vectorstore, PROMPT):
     llm = ChatGoogleGenerativeAI(
         model="gemini-pro",
         google_api_key=GOOGLE_API_KEY,
-        temperature=0.1
+        temperature=0.1,
+        max_tokens=4096
     )
     
     # Create the QA chain
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
-        retriever=vectorstore.as_retriever(),
+        retriever=vectorstore.as_retriever(
+            search_type="mmr",
+            search_kwargs={
+                "k": 6,
+                "fetch_k": 8,
+                "lambda_mult": 0.7
+            }
+        ),
         return_source_documents=True,
         chain_type_kwargs={"prompt": PROMPT, "verbose": True}
     )
