@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
@@ -13,8 +13,13 @@ from dotenv import load_dotenv
 from prompt import prompt_template, follow_up_prompt, relevancy_prompt
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from typing import Dict, List
+from collections import defaultdict
+from threading import Lock
+import uuid
 
 app = Flask(__name__)
+# Add a secret key for session management
+app.secret_key = os.urandom(24)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -33,8 +38,16 @@ PROMPT = PromptTemplate(
     input_variables=["context", "question"]
 )
 
-# Initialize empty dictionary for topic chains
-topic_chains = {}
+# Create separate dictionaries for each user session
+user_topic_chains = defaultdict(dict)
+user_chat_histories = defaultdict(lambda: defaultdict(list))
+topic_locks = defaultdict(Lock)
+
+@app.before_request
+def before_request():
+    # Create a unique session ID for each user if they don't have one
+    if 'user_id' not in session:
+        session['user_id'] = str(uuid.uuid4())
 
 def setup_qa_chain(vectorstore, PROMPT):
     # Initialize the language model
@@ -98,10 +111,6 @@ def process_pdfs(pdf_directory):
     vectorstore = FAISS.from_documents(texts, embeddings)
     return vectorstore
 
-
-chat_histories: Dict[str, List[dict]] = {}
-
-
 @app.route('/', methods=['GET'])
 def index():
     return render_template('index.html')
@@ -115,24 +124,25 @@ def get_topics():
 @app.route('/initialize-topic', methods=['POST'])
 def initialize_topic():
     try:
+        user_id = session['user_id']
         data = request.get_json()
         topic = data.get('topic')
         
         if not topic:
             return jsonify({"success": False, "error": "No topic provided"}), 400
             
-        # Check if topic directory exists
         topic_dir = os.path.join(BASE_DIR, topic)
         if not os.path.exists(topic_dir):
             return jsonify({"success": False, "error": "Topic directory not found"}), 404
             
-        # Only process if not already initialized
-        if topic not in topic_chains:
-            print(f"Initializing embeddings for topic: {topic}")
-            vectorstore = process_pdfs(topic_dir)
-            qa_chain = setup_qa_chain(vectorstore, PROMPT)
-            topic_chains[topic] = qa_chain
-            print(f"Finished initializing {topic}")
+        # Initialize topic for specific user if not already done
+        if topic not in user_topic_chains[user_id]:
+            print(f"Initializing embeddings for topic: {topic} for user: {user_id}")
+            with topic_locks[topic]:  # Thread-safe operation
+                vectorstore = process_pdfs(topic_dir)
+                qa_chain = setup_qa_chain(vectorstore, PROMPT)
+                user_topic_chains[user_id][topic] = qa_chain
+            print(f"Finished initializing {topic} for user: {user_id}")
             
         return jsonify({
             "success": True,
@@ -140,7 +150,7 @@ def initialize_topic():
         })
         
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
+        print(f"Error occurred for user {session.get('user_id')}: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)
@@ -149,88 +159,90 @@ def initialize_topic():
 @app.route('/ask', methods=['POST'])
 def ask_question():
     try:
+        user_id = session['user_id']
         data = request.get_json()
         question = data.get('question')
         topic = data.get('topic')
         
-        print(f"Received question: {question} for topic: {topic}")
+        print(f"Received question from user {user_id}: {question} for topic: {topic}")
 
-        if not question:
-            return jsonify({"error": "No question provided"}), 400
-            
-        if not topic:
-            return jsonify({"error": "No topic selected"}), 400
-            
-        if topic not in topic_chains:
-            return jsonify({"error": "Invalid topic"}), 400
+        if not question or not topic:
+            return jsonify({"error": "Missing question or topic"}), 400
 
-        # Initialize chat history for topic if it doesn't exist
-        if topic not in chat_histories:
-            chat_histories[topic] = []
+        # Use user-specific topic chains
+        if topic not in user_topic_chains[user_id]:
+            return jsonify({"error": "Topic not initialized"}), 400
 
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-pro",
-            google_api_key=GOOGLE_API_KEY,
-            temperature=0
-        )
+        # Get user-specific chat history
+        if topic not in user_chat_histories[user_id]:
+            user_chat_histories[user_id][topic] = []
 
-        # Check for follow-up FIRST
-        is_follow_up = llm.predict(follow_up_prompt.format(
-            question=question
-        )).strip().lower() == 'yes'
+        with topic_locks[topic]:  # Thread-safe operation
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-pro",
+                google_api_key=GOOGLE_API_KEY,
+                temperature=0
+            )
 
-        if is_follow_up and chat_histories[topic]:
-            # Get the last question and its context
-            last_question = chat_histories[topic][-1]["question"]
-            # Combine previous question with the follow-up request
-            enhanced_question = f"{last_question} {question}"
-            result = topic_chains[topic]({"query": enhanced_question})
-        else:
-            # Only check relevancy for new questions, not follow-ups
-            relevancy_check = llm.predict(relevancy_prompt.format(
-                topic=topic,
+            # Check for follow-up using user-specific history
+            is_follow_up = llm.predict(follow_up_prompt.format(
                 question=question
-            )).strip().lower()
+            )).strip().lower() == 'yes'
+
+            if is_follow_up and user_chat_histories[user_id][topic]:
+                last_question = user_chat_histories[user_id][topic][-1]["question"]
+                enhanced_question = f"{last_question} {question}"
+                result = user_topic_chains[user_id][topic]({"query": enhanced_question})
+            else:
+                relevancy_check = llm.predict(relevancy_prompt.format(
+                    topic=topic,
+                    question=question
+                )).strip().lower()
+                
+                if relevancy_check != 'yes':
+                    return jsonify({
+                        "answer": f"I apologize, but this question doesn't seem to be related to {topic}.",
+                        "word_count": 0,
+                        "sources": []
+                    })
+                
+                result = user_topic_chains[user_id][topic]({"query": question})
+
+            # Store in user-specific chat history
+            if not is_follow_up:
+                user_chat_histories[user_id][topic].append({
+                    "question": question,
+                    "answer": result["result"]
+                })
+
+            word_count = len(result["result"].split())
             
-            if relevancy_check != 'yes':
-                return jsonify({
-                    "answer": f"I apologize, but this question doesn't seem to be related to {topic}. Please ask a question about {topic} or switch to a more relevant topic.",
-                    "word_count": 0,
-                    "sources": []
+            sources = []
+            for doc in result.get("source_documents", []):
+                sources.append({
+                    "page": doc.metadata.get("page", "Unknown"),
+                    "source": doc.metadata.get("source", "Unknown")
                 })
             
-            result = topic_chains[topic]({"query": question})
+            response = {
+                "answer": result["result"],
+                "word_count": word_count,
+                "sources": sources,
+                "topic": topic
+            }
+            print("Response is...", response)
+            print("Chat history is...", user_chat_histories)
+            print("Word count is...", word_count)
+            return jsonify(response)
 
-        # Store only new questions in chat history, not follow-ups
-        if not is_follow_up:
-            chat_histories[topic].append({
-                "question": question,
-                "answer": result["result"]
-            })
-        
-        word_count = len(result["result"].split())
-        
-        sources = []
-        for doc in result.get("source_documents", []):
-            sources.append({
-                "page": doc.metadata.get("page", "Unknown"),
-                "source": doc.metadata.get("source", "Unknown")
-            })
-        
-        response = {
-            "answer": result["result"],
-            "word_count": word_count,
-            "sources": sources,
-            "topic": topic
-        }
-        print("Response is...", response)
-        print("Chat history is...", chat_histories)
-        print("Word count is...", word_count)
-        return jsonify(response)
-        
     except Exception as e:
-        print(f"Error occurred: {str(e)}")
+        print(f"Error occurred for user {session.get('user_id')}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+# Add cleanup function to remove old sessions periodically
+def cleanup_old_sessions():
+    # Implement session cleanup logic here
+    pass
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', threaded=True)

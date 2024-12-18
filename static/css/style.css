@@ -20,6 +20,7 @@ body {
     width: 100%;
     max-width: 1000px;
     height: 90vh;
+    margin: 10px;
     background: white;
     border-radius: 20px;
     box-shadow: 0 10px 20px rgba(0,0,0,0.1);
@@ -71,7 +72,8 @@ body {
 
 .message {
     margin-bottom: 20px;
-    max-width: 80%;
+    max-width: 85%;
+    word-wrap: break-word;
     animation: fadeIn 0.3s ease-in;
 }
 
@@ -113,15 +115,16 @@ body {
 .input-container {
     display: flex;
     gap: 10px;
+    padding: 0 5px;
 }
 
 #user-input {
     flex-grow: 1;
-    padding: 15px;
+    padding: 10px 15px;
     border: 2px solid #eee;
     border-radius: 25px;
     outline: none;
-    font-size: 16px;
+    font-size: clamp(0.9rem, 3vw, 1rem);
     transition: border-color 0.3s ease;
 }
 
@@ -196,10 +199,11 @@ body {
     flex-wrap: wrap;
     justify-content: center;
     margin: 15px 0;
+    padding: 0 10px;
 }
 
 .topic-button {
-    padding: 10px 20px;
+    padding: 8px 15px;
     border: none;
     border-radius: 20px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -207,6 +211,8 @@ body {
     cursor: pointer;
     transition: all 0.3s ease;
     margin: 5px;
+    font-size: clamp(0.8rem, 3vw, 1rem);
+    white-space: nowrap;
 }
 
 .topic-button:hover {
@@ -224,4 +230,64 @@ body {
 input:disabled {
     background-color: #f8f9fa;
     cursor: not-allowed;
+}
+
+/* Add media queries for smaller screens */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    .chat-container {
+        height: 95vh;
+    }
+
+    .chat-messages {
+        padding: 15px;
+    }
+
+    .welcome-message {
+        padding: 15px;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    .sources {
+        font-size: 0.75em;
+    }
+
+    .chat-input {
+        padding: 15px;
+    }
+
+    #send-button {
+        width: 45px;
+        height: 45px;
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 480px) {
+    .topic-buttons {
+        gap: 5px;
+    }
+
+    .topic-button {
+        padding: 6px 12px;
+        margin: 3px;
+    }
+
+    .welcome-message h3 {
+        font-size: 1.2rem;
+    }
+
+    .welcome-message p {
+        font-size: 0.9rem;
+    }
+
+    .bot-message, .user-message {
+        padding: 10px 15px;
+    }
 }
