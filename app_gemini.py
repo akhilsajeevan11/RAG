@@ -164,6 +164,91 @@ def initialize_topic():
             "error": str(e)
         }), 500
 
+# @app.route('/ask', methods=['POST'])
+# def ask_question():
+#     try:
+#         user_id = session['user_id']
+#         data = request.get_json()
+#         question = data.get('question')
+#         topic = data.get('topic')
+        
+#         print(f"Received question from user {user_id}: {question} for topic: {topic}")
+
+#         if not question or not topic:
+#             return jsonify({"error": "Missing question or topic"}), 400
+
+#         # Use user-specific topic chains
+#         if topic not in user_topic_chains[user_id]:
+#             return jsonify({"error": "Topic not initialized"}), 400
+
+#         # Get user-specific chat history
+#         if topic not in user_chat_histories[user_id]:
+#             user_chat_histories[user_id][topic] = []
+
+#         with topic_locks[topic]:  # Thread-safe operation
+#             llm = ChatGoogleGenerativeAI(
+#                 model="gemini-pro",
+#                 google_api_key=GOOGLE_API_KEY,
+#                 temperature=0
+#             )
+
+#             # Check for follow-up using user-specific history
+#             is_follow_up = llm.predict(follow_up_prompt.format(
+#                 question=question
+#             )).strip().lower() == 'yes'
+
+#             if is_follow_up and user_chat_histories[user_id][topic]:
+#                 last_question = user_chat_histories[user_id][topic][-1]["question"]
+#                 enhanced_question = f"{last_question} {question}"
+#                 result = user_topic_chains[user_id][topic]({"query": enhanced_question})
+#             else:
+#                 relevancy_check = llm.predict(relevancy_prompt.format(
+#                     topic=topic,
+#                     question=question
+#                 )).strip().lower()
+                
+#                 if relevancy_check != 'yes':
+#                     return jsonify({
+#                         "answer": f"I apologize, but this question doesn't seem to be related to {topic}.",
+#                         "word_count": 0,
+#                         "sources": []
+#                     })
+                
+#                 result = user_topic_chains[user_id][topic]({"query": question})
+
+#             # Store in user-specific chat history
+#             if not is_follow_up:
+#                 user_chat_histories[user_id][topic].append({
+#                     "question": question,
+#                     "answer": result["result"]
+#                 })
+
+#             word_count = len(result["result"].split())
+            
+#             sources = []
+#             for doc in result.get("source_documents", []):
+#                 sources.append({
+#                     "page": doc.metadata.get("page", "Unknown"),
+#                     "source": doc.metadata.get("source", "Unknown")
+#                 })
+            
+#             response = {
+#                 "answer": result["result"],
+#                 "word_count": word_count,
+#                 "sources": sources,
+#                 "topic": topic
+#             }
+#             print("Response is...", response)
+#             print("Chat history is...", user_chat_histories)
+#             print("Word count is...", word_count)
+#             return jsonify(response)
+
+#     except Exception as e:
+#         print(f"Error occurred for user {session.get('user_id')}: {str(e)}")
+#         return jsonify({"error": str(e)}), 500
+
+
+
 @app.route('/ask', methods=['POST'])
 def ask_question():
     try:
@@ -171,19 +256,17 @@ def ask_question():
         data = request.get_json()
         question = data.get('question')
         topic = data.get('topic')
-        
+
         print(f"Received question from user {user_id}: {question} for topic: {topic}")
 
         if not question or not topic:
             return jsonify({"error": "Missing question or topic"}), 400
 
-        # Use user-specific topic chains
         if topic not in user_topic_chains[user_id]:
             return jsonify({"error": "Topic not initialized"}), 400
 
-        # Get user-specific chat history
-        if topic not in user_chat_histories[user_id]:
-            user_chat_histories[user_id][topic] = []
+        # Get chat history for this user and topic
+        chat_history = user_chat_histories[user_id][topic]
 
         with topic_locks[topic]:  # Thread-safe operation
             llm = ChatGoogleGenerativeAI(
@@ -192,13 +275,13 @@ def ask_question():
                 temperature=0
             )
 
-            # Check for follow-up using user-specific history
+            # Determine follow-up
             is_follow_up = llm.predict(follow_up_prompt.format(
                 question=question
             )).strip().lower() == 'yes'
 
-            if is_follow_up and user_chat_histories[user_id][topic]:
-                last_question = user_chat_histories[user_id][topic][-1]["question"]
+            if is_follow_up and chat_history:
+                last_question = chat_history[-1]["question"]
                 enhanced_question = f"{last_question} {question}"
                 result = user_topic_chains[user_id][topic]({"query": enhanced_question})
             else:
@@ -206,46 +289,50 @@ def ask_question():
                     topic=topic,
                     question=question
                 )).strip().lower()
-                
+
                 if relevancy_check != 'yes':
                     return jsonify({
                         "answer": f"I apologize, but this question doesn't seem to be related to {topic}.",
                         "word_count": 0,
                         "sources": []
                     })
-                
+
                 result = user_topic_chains[user_id][topic]({"query": question})
 
-            # Store in user-specific chat history
-            if not is_follow_up:
-                user_chat_histories[user_id][topic].append({
-                    "question": question,
-                    "answer": result["result"]
-                })
+            # Store the question-answer pair in chat history
+            chat_history.append({
+                "question": question,
+                "answer": result["result"]
+            })
 
+            # Extract word count and sources
             word_count = len(result["result"].split())
-            
-            sources = []
-            for doc in result.get("source_documents", []):
-                sources.append({
+            sources = [
+                {
                     "page": doc.metadata.get("page", "Unknown"),
                     "source": doc.metadata.get("source", "Unknown")
-                })
-            
+                }
+                for doc in result.get("source_documents", [])
+            ]
+
             response = {
                 "answer": result["result"],
                 "word_count": word_count,
                 "sources": sources,
                 "topic": topic
             }
-            print("Response is...", response)
-            print("Chat history is...", user_chat_histories)
-            print("Word count is...", word_count)
+            print("Response:", response)
+            print("Updated Chat History:", user_chat_histories)
             return jsonify(response)
 
     except Exception as e:
         print(f"Error occurred for user {session.get('user_id')}: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
+
+
+
 
 # Add cleanup function to remove old sessions periodically
 def cleanup_old_sessions():
