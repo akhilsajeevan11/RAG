@@ -1,191 +1,306 @@
-let currentTopic = null;
-
-// Function to load available topics when the page loads
-function loadTopics() {
-    fetch('/get-topics')
-        .then(response => response.json())
-        .then(data => {
-            const topicButtons = document.querySelector('.topic-buttons');
-            topicButtons.innerHTML = ''; // Clear existing buttons
-            
-            data.topics.forEach(topic => {
-                const button = document.createElement('button');
-                button.className = 'topic-button';
-                button.onclick = () => selectTopic(topic);
-                // Format the display text (replace underscores with spaces)
-                button.textContent = topic.replace(/_/g, ' ');
-                topicButtons.appendChild(button);
-            });
-        })
-        .catch(error => console.error('Error loading topics:', error));
-}
-
-// Load topics when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    loadTopics();
-    initializeUI();
+    const chatApp = new ChatApplication();
+    chatApp.initialize();
 });
 
-document.getElementById('send-button').addEventListener('click', sendMessage);
-document.getElementById('user-input').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        sendMessage();
+class ChatApplication {
+    constructor() {
+        this.currentTopic = null;
+        this.abortController = null;
+        this.isTopicLoading = false;
+        this.retryCount = 0;
+        this.maxRetries = 3;
+        
+        // DOM Elements
+        this.dom = {
+            userInput: document.getElementById('user-input'),
+            sendButton: document.getElementById('send-button'),
+            chatMessages: document.getElementById('chat-messages'),
+            typingIndicator: document.getElementById('typing-indicator'),
+            topicGrid: document.querySelector('.topic-grid')
+        };
     }
-});
 
-function createLoadingIndicator() {
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'message bot-message loading';
-    loadingDiv.innerHTML = `
-        <span></span>
-        <span></span>
-        <span></span>
-    `;
-    return loadingDiv;
-}
-
-function addMessage(message, isUser = false) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-    
-    if (typeof message === 'object') {
-        let messageContent = message.answer;
-        
-        // Only add sources section if sources exist and are not empty
-        if (message.sources && message.sources.length > 0) {
-            messageContent += `
-                <div class="sources">
-                    <i class="fas fa-book"></i> Sources: ${message.sources.map(source => 
-                        `Page ${source.page} from ${source.source.split('/').pop()}`
-                    ).join(', ')}
-                </div>`;
-        }
-        
-        messageDiv.innerHTML = messageContent;
-    } else {
-        messageDiv.textContent = message;
+    initialize() {
+        this.initializeUI();
+        this.setupEventListeners();
+        this.loadTopics();
     }
-    
-    document.getElementById('chat-messages').appendChild(messageDiv);
-    messageDiv.scrollIntoView({ behavior: 'smooth' });
-}
 
-function sendMessage() {
-    const input = document.getElementById('user-input');
-    const question = input.value.trim();
-    
-    if (!currentTopic) {
-        addMessage('Please select a topic first!', false);
-        return;
+    initializeUI() {
+        this.dom.userInput.disabled = true;
+        this.dom.userInput.placeholder = 'Select a topic to begin...';
+        this.dom.typingIndicator.style.display = 'none';
     }
-    
-    if (question) {
-        // Add user message to chat
-        addMessage(question, true);
+
+    setupEventListeners() {
+        this.dom.sendButton.addEventListener('click', () => this.sendMessage());
         
-        // Clear input
-        input.value = '';
+        this.dom.userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
         
-        // Add loading indicator
-        const messagesDiv = document.getElementById('chat-messages');
-        const loadingIndicator = createLoadingIndicator();
-        messagesDiv.appendChild(loadingIndicator);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        
-        // Send request to backend
-        fetch('/ask', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ 
-                question: question,
-                topic: currentTopic  // Include the selected topic
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Remove loading indicator
-            loadingIndicator.remove();
-            // Add bot response to chat
-            addMessage(data);
-        })
-        .catch(error => {
-            // Remove loading indicator
-            loadingIndicator.remove();
-            console.error('Error:', error);
-            addMessage('Sorry, there was an error processing your request.');
+        this.dom.topicGrid.addEventListener('click', (e) => {
+            const topicCard = e.target.closest('.topic-card');
+            if (topicCard) {
+                this.selectTopic(topicCard.dataset.topic);
+            }
         });
     }
-}
 
-function selectTopic(topic) {
-    // Remove active class from all buttons
-    document.querySelectorAll('.topic-button').forEach(button => {
-        button.classList.remove('active');
-    });
-
-    // Add active class to selected button
-    const selectedButton = Array.from(document.querySelectorAll('.topic-button'))
-        .find(button => button.textContent === topic);
-    if (selectedButton) {
-        selectedButton.classList.add('active');
+    async loadTopics() {
+        try {
+            this.showTypingIndicator();
+            const response = await fetch('/get-topics');
+            
+            // Check for HTTP errors first
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Handle explicit server errors
+            if (data.error) {
+                throw new Error(data.error);
+            }
+    
+            // Handle empty topics case
+            if (!data.topics || data.topics.length === 0) {
+                this.addSystemMessage('No topics available. Contact administrator.');
+                return;
+            }
+    
+            // Clear and rebuild topics
+            this.dom.topicGrid.innerHTML = '';
+            data.topics.forEach(topic => this.createTopicCard(topic));
+            
+        } catch (error) {
+            console.error('Topic load error:', error);
+            this.addSystemMessage(error.message || 'Failed to load topics');
+        } finally {
+            this.hideTypingIndicator();
+        }
     }
 
-    currentTopic = topic;
-    
-    // Clear previous chat messages
-    const messagesDiv = document.getElementById('chat-messages');
-    const welcomeMessage = document.querySelector('.welcome-message');
-    // Keep the welcome message but clear the rest
-    Array.from(messagesDiv.children)
-        .filter(child => child !== welcomeMessage)
-        .forEach(child => child.remove());
-    
-    // Add loading indicator
-    const loadingIndicator = createLoadingIndicator();
-    messagesDiv.appendChild(loadingIndicator);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    
-    // Initialize the topic
-    fetch('/initialize-topic', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ topic: topic })
-    })
-    .then(response => response.json())
-    .then(data => {
-        // Remove loading indicator
-        loadingIndicator.remove();
+    createTopicCard(topic) {
+        const topicCard = document.createElement('button');
+        topicCard.className = 'topic-card';
+        topicCard.dataset.topic = topic;
+        topicCard.innerHTML = `
+            <i class="${this.getTopicIcon(topic)}"></i>
+            <span>${this.formatTopicName(topic)}</span>
+        `;
+        topicCard.addEventListener('click', () => this.handleTopicSelection(topicCard));
+        this.dom.topicGrid.appendChild(topicCard);
+    }
+
+    async selectTopic(topic) {
+        if (this.isTopicLoading || this.currentTopic === topic) return;
         
-        if (data.success) {
-            // Simple welcome message with topic name
-            const welcomeText = `Topic initialized. You can now ask questions about ${topic}.`;
+        try {
+            this.isTopicLoading = true;
+            this.showTypingIndicator();
+            this.clearPreviousTopicState();
             
-            addMessage(welcomeText, false);
-
-            // Enable input field
-            document.getElementById('user-input').disabled = false;
-            document.getElementById('user-input').placeholder = `Ask a question about ${topic}...`;
-        } else {
-            addMessage(`Error initializing topic: ${data.error}`, false);
+            if (this.abortController) {
+                this.abortController.abort();
+            }
+            
+            this.abortController = new AbortController();
+            
+            const response = await fetch('/initialize-topic', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic }),
+                signal: this.abortController.signal
+            });
+            
+            const data = await this.validateResponse(response);
+            
+            if (data.success) {
+                this.currentTopic = topic;
+                this.updateUIForSelectedTopic(topic);
+                this.addSystemMessage(`Now ready to answer questions about ${this.formatTopicName(topic)}`);
+            }
+        } catch (error) {
+            this.handleError('Topic initialization error:', error);
+            this.currentTopic = null;
+            this.addSystemMessage(error.message || 'Failed to initialize topic');
+        } finally {
+            this.isTopicLoading = false;
+            this.hideTypingIndicator();
         }
-    })
-    .catch(error => {
-        // Remove loading indicator
-        loadingIndicator.remove();
-        
-        console.error('Error:', error);
-        addMessage('Sorry, there was an error initializing the topic.');
-    });
-}
+    }
 
-// Add this function to handle initial UI state
-function initializeUI() {
-    // Disable input field until topic is selected
-    const inputField = document.getElementById('user-input');
-    inputField.disabled = true;
-    inputField.placeholder = 'Please select a topic first...';
+    async sendMessage() {
+        const question = this.dom.userInput.value.trim();
+        if (!question || !this.currentTopic) return;
+
+        try {
+            this.addMessage(question, true);
+            this.dom.userInput.value = '';
+            this.showTypingIndicator();
+            
+            const response = await fetch('/ask', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    question: this.sanitizeInput(question), 
+                    topic: this.currentTopic 
+                })
+            });
+            
+            const data = await this.validateResponse(response);
+            this.handleBotResponse(data);
+        } catch (error) {
+            this.handleError('Message sending error:', error);
+            this.addMessage('Sorry, there was an error processing your request.');
+        } finally {
+            this.hideTypingIndicator();
+        }
+    }
+
+    // Helper methods
+    sanitizeInput(input) {
+        // Basic sanitization - implement proper sanitization based on your needs
+        return input.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
+        try {
+            const response = await fetch(url, options);
+            return await this.validateResponse(response);
+        } catch (error) {
+            if (retries > 0) {
+                this.retryCount++;
+                await new Promise(resolve => setTimeout(resolve, 1000 * this.retryCount));
+                return this.fetchWithRetry(url, options, retries - 1);
+            }
+            throw error;
+        }
+    }
+
+    async validateResponse(response) {
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        console.log('Response data:', data);
+        if (data.error) throw new Error(data.error);
+        return data;
+    }
+
+    handleBotResponse(data) {
+        let responseContent = this.sanitizeInput(data.answer);
+        if (data.sources?.length > 0) {
+            responseContent += this.formatSources(data.sources);
+        }
+        this.addMessage(responseContent);
+    }
+
+    formatSources(sources) {
+        return `
+            <div class="sources" role="complementary" aria-label="Document sources">
+                <i class="fas fa-file-pdf"></i>
+                ${sources.map(src => `
+                    <div class="source-item" role="listitem">
+                        Page ${src.page} in ${src.source.split('/').pop()}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    addMessage(content, isUser = false) {
+        const messageElement = this.createMessageElement(content, isUser);
+        this.dom.chatMessages.appendChild(messageElement);
+        this.scrollToBottom();
+    }
+
+    createMessageElement(content, isUser = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message-bubble ${isUser ? 'user-message' : 'bot-message'}`;
+        messageDiv.setAttribute('role', 'article');
+        messageDiv.setAttribute('aria-live', 'assertive');
+
+        const timestamp = new Date().toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+
+        messageDiv.innerHTML = `
+            <div class="message-info" role="heading" aria-level="2">
+                <i class="${isUser ? 'fas fa-user' : 'fas fa-robot'}" aria-hidden="true"></i>
+                <span>${isUser ? 'You' : 'Assistant'}</span>
+                <span>${timestamp}</span>
+            </div>
+            <div class="message-content" role="region">${content}</div>
+        `;
+
+        return messageDiv;
+    }
+
+    addSystemMessage(content) {
+        const systemMessage = document.createElement('div');
+        systemMessage.className = 'system-message';
+        systemMessage.setAttribute('role', 'alert');
+        systemMessage.innerHTML = `
+            <i class="fas fa-info-circle" aria-hidden="true"></i>
+            ${this.sanitizeInput(content)}
+        `;
+        this.dom.chatMessages.appendChild(systemMessage);
+        this.scrollToBottom();
+    }
+
+    scrollToBottom() {
+        this.dom.chatMessages.scrollTop = this.dom.chatMessages.scrollHeight;
+    }
+
+    updateUIForSelectedTopic(topic) {
+        document.querySelectorAll('.topic-card').forEach(card => {
+            card.classList.toggle('active', card.dataset.topic === topic);
+        });
+        this.dom.userInput.disabled = false;
+        this.dom.userInput.placeholder = `Ask about ${this.formatTopicName(topic)}...`;
+        this.dom.userInput.focus();
+    }
+
+    clearPreviousTopicState() {
+        this.dom.chatMessages.querySelectorAll('.message-bubble').forEach(msg => msg.remove());
+    }
+
+    handleError(context, error) {
+        console.error(context, error);
+        if (error.name !== 'AbortError') {
+            this.addSystemMessage(error.message || 'An unexpected error occurred');
+        }
+    }
+
+    showTypingIndicator() {
+        this.dom.typingIndicator.style.display = 'flex';
+    }
+
+    hideTypingIndicator() {
+        this.dom.typingIndicator.style.display = 'none';
+    }
+
+    formatTopicName(topic) {
+        return topic.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    getTopicIcon(topic) {
+        const icons = {
+            "RDBMS": 'fas fa-database',
+            "Python Programming": 'fab fa-python',
+            "Data Visualization": 'fas fa-chart-line',
+            "Problem Solving C": 'fas fa-copyright',
+            "Discrete Mathematics": 'fas fa-calculator'
+        };
+        return icons[topic] || 'fas fa-file-alt';
+    }
 }

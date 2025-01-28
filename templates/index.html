@@ -11,29 +11,61 @@
     <div class="chat-container">
         <div class="chat-header">
             <div class="header-content">
-                <i class="fas fa-robot"></i>
-                <h2>PDF Assistant</h2>
+                <div class="avatar">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <div class="header-text">
+                    <h2>PDF Assistant</h2>
+                    <p class="status">Online</p>
+                </div>
+            </div>
+            <div class="typing-indicator" id="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
             </div>
         </div>
+        
         <div class="chat-messages" id="chat-messages">
-            <div class="welcome-message">
-                <h3>👋 Welcome! I'm your PDF Assistant</h3>
-                <p>I can help you find information from your PDF documents. Please select a topic:</p>
-                <div class="topic-buttons">
-                    <button class="topic-button" onclick="selectTopic('RDBMS')">RDBMS</button>
-                    <button class="topic-button" onclick="selectTopic('Python')">Python</button>
-                    <button class="topic-button" onclick="selectTopic('Data_visualisation')">Data Visualisation</button>
-                    <button class="topic-button" onclick="selectTopic('C_programing')">C-Programing</button>
-                    <button class="topic-button" onclick="selectTopic('Discrete_Mathematics')">Discrete Mathematics</button>
+            <div class="welcome-card">
+                <div class="welcome-content">
+                    <h3>👋 Welcome to PDF Assistant</h3>
+                    <p>Ask questions about your documents or choose a topic:</p>
+                    <div class="topic-grid">
+                        <button class="topic-card" data-topic="RDBMS">
+                            <i class="fas fa-database"></i>
+                            <span>RDBMS</span>
+                        </button>
+                        <button class="topic-card" data-topic="Python Programming">
+                            <i class="fab fa-python"></i>
+                            <span>Python Programming</span>
+                        </button>
+                        <button class="topic-card" data-topic="Data Visualization">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Data Visualization</span>
+                        </button>
+                        <button class="topic-card" data-topic="Problem Solving C">
+                            <i class="fas fa-copyright"></i>
+                            <span>Problem Solving C</span>
+                        </button>
+                        <button class="topic-card" data-topic="Discrete Mathematics">
+                            <i class="fas fa-calculator"></i>
+                            <span>Discrete Mathematics</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
+
         <div class="chat-input">
             <div class="input-container">
-                <input type="text" id="user-input" placeholder="Ask your question here...">
-                <button id="send-button">
+                <input type="text" id="user-input" placeholder="Type your question...">
+                <button id="send-button" class="send-btn">
                     <i class="fas fa-paper-plane"></i>
                 </button>
+            </div>
+            <div class="input-footer">
+                <small>AI can make mistakes. Verify important information.</small>
             </div>
         </div>
     </div>
