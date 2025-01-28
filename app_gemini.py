@@ -18,12 +18,12 @@ from threading import Lock
 import uuid
 
 import traceback
-from flask_cors import CORS
+# from flask_cors import CORS
 
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+# CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Add a secret key for session management
 app.secret_key = os.urandom(24)
