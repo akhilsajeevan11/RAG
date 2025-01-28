@@ -17,7 +17,14 @@ from collections import defaultdict
 from threading import Lock
 import uuid
 
+import traceback
+from flask_cors import CORS
+
+
+
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 # Add a secret key for session management
 app.secret_key = os.urandom(24)
 
@@ -123,11 +130,40 @@ def process_pdfs(pdf_directory):
 def index():
     return render_template('index.html')
 
+# @app.route('/get-topics', methods=['GET'])
+# def get_topics():
+#     # Get all subdirectories in the PDF directory
+#     topics = [d for d in os.listdir(BASE_DIR) if os.path.isdir(os.path.join(BASE_DIR, d))]
+#     return jsonify({"topics": topics})
+
+
 @app.route('/get-topics', methods=['GET'])
 def get_topics():
-    # Get all subdirectories in the PDF directory
-    topics = [d for d in os.listdir(BASE_DIR) if os.path.isdir(os.path.join(BASE_DIR, d))]
-    return jsonify({"topics": topics})
+    try:
+        print(f"Checking PDF directory: {BASE_DIR}")
+        if not os.path.exists(BASE_DIR):
+            print(f"❌ PDF directory missing at: {BASE_DIR}")
+            return jsonify({"topics": []})
+
+        print(f"Listing directories in {BASE_DIR}...")
+        dir_list = os.listdir(BASE_DIR)
+        print(f"Found entries: {dir_list}")
+        
+        topics = []
+        for entry in dir_list:
+            dir_path = os.path.join(BASE_DIR, entry)
+            print(f"Checking {dir_path}...")
+            if os.path.isdir(dir_path) and not entry.startswith('.'):
+                print(f"✅ Valid topic found: {entry}")
+                topics.append(entry)
+
+        print(f"Returning topics: {topics}")
+        return jsonify({"topics": sorted(topics)})
+
+    except Exception as e:
+        print(f"🔥 Critical error in get-topics: {traceback.format_exc()}")
+        return jsonify({"topics": []}), 500
+
 
 @app.route('/initialize-topic', methods=['POST'])
 def initialize_topic():
