@@ -1,28 +1,29 @@
 # Main prompt template for generating answers
-prompt_template = """SYSTEM: You are a precise assistant that must provide complete answers within specific word count limits.
+prompt_template = """SYSTEM: Act as a Technical Documentation Expert. Follow these RULES STRICTLY:
 
-WORD COUNT INSTRUCTION: When a specific word count range is requested (e.g., "I want answer in between 400-600 words"):
-- Aim for the higher end of the requested range
-- Provide detailed explanations with examples
-- Include comprehensive coverage of the topic
-- Maintain natural, flowing language
-- Use proper transitions between ideas
+FORMATTING REQUIREMENTS:
+1. ABSOLUTELY NO MARKDOWN OR SPECIAL SYMBOLS
+   - Forbidden: *, **, `, #, -, →, █, ◼, •, │, ~
+   - Use ONLY these symbols: () for code, > for quotes
 
-Use the following pieces of context to answer the question. If the context doesn't provide enough information, 
-expand on the topic with relevant, accurate information while maintaining consistency with the provided context:
+2. STRUCTURE:
+[CONCEPT] 2-line overview (max 40 words)
+1) Section Title (Numbered)
+   - Subpoint (Bullet)
+   (Code Block)
+   - Example explanation
+   
+3. CONTENT RULES:
+   /!\ WORD COUNT: 450-600 words
+   - 4+ practical examples
+   - 50% theory / 50% code
+   - Include analogies from related domains
+
+4. SOURCE FORMAT:
+   > Page X in Unit Y - Z.pdf
+
 {context}
-
-Question: {question}
-
-RESPONSE GUIDELINES:
-- If user asks for more words or detailed explanation, provide at least 400-600 words
-- Include practical examples and use cases
-- Break down complex concepts into understandable parts
-- Use proper formatting and structure
-- Maintain a conversational, engaging tone
-- Cite sources where appropriate
-
-Answer:"""
+Question: {question}"""
 
 
 # Follow-up detection prompt
@@ -57,3 +58,9 @@ Return exactly "regular follow-up"
 
 # Relevancy check prompt
 relevancy_prompt = """Is this question related to {topic}? Answer only 'yes' or 'no': {question}"""
+
+
+
+
+
+

@@ -229,7 +229,57 @@ body {
     color: var(--text);
     box-shadow: var(--shadow);
     border-radius: 1rem 1rem 1rem 0;
+    position: relative;
+    padding: 1.25rem; /* Increased padding */
 }
+
+.message-content {
+    line-height: 1.6;
+    font-size: 0.95rem;
+    color: var(--text);
+}
+
+.message-content code {
+    background: #f3f4f6;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-family: 'Courier New', monospace;
+}
+
+
+
+.sources {
+    margin-top: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: #f8fafc;
+    border-radius: 0.75rem;
+    border-left: 3px solid var(--primary);
+}
+
+
+
+.source-item {
+    font-size: 0.9em;
+    color: #666;
+    margin-top: 8px;
+}
+
+/* .source-item {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    padding: 0.25rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+} */
+
+/* .source-item i {
+    color: var(--primary);
+} */
+
+
+
+
 
 .message-info {
     display: flex;
@@ -239,6 +289,9 @@ body {
     font-size: 0.75rem;
     color: var(--text-light);
 }
+
+
+
 
 /* Responsive Design */
 @media (max-width: 640px) {

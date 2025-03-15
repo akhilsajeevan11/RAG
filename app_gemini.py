@@ -59,7 +59,7 @@ def before_request():
 def setup_qa_chain(vectorstore, PROMPT):
     # Initialize the language model
     llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
+        model="gemini-2.0-flash",
         google_api_key=GOOGLE_API_KEY,
         temperature=0.1,
         max_tokens=4096
@@ -285,6 +285,8 @@ def initialize_topic():
 
 
 
+
+
 @app.route('/ask', methods=['POST'])
 def ask_question():
     try:
@@ -306,9 +308,9 @@ def ask_question():
 
         with topic_locks[topic]:  # Thread-safe operation
             llm = ChatGoogleGenerativeAI(
-                model="gemini-pro",
+                model="gemini-2.0-flash",
                 google_api_key=GOOGLE_API_KEY,
-                temperature=0
+                temperature=0.2
             )
 
             # Determine follow-up
@@ -352,23 +354,30 @@ def ask_question():
             ]
 
             response = {
-                "answer": result["result"],
+                "answer": f"{result['result']}",
                 "word_count": word_count,
-                "sources": sources,
+                # "sources": process_sources(sources),
                 "topic": topic
             }
+
+
             print("Response:", response)
             print("Updated Chat History:", user_chat_histories)
             return jsonify(response)
+            
 
     except Exception as e:
         print(f"Error occurred for user {session.get('user_id')}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-
-
-
-
+def process_sources(sources):
+    source_map = {}
+    for doc in sources:
+        key = doc['source']
+        if key not in source_map:
+            source_map[key] = []
+        source_map[key].append(doc['page'])
+    return [{"source": k, "pages": sorted(v)} for k,v in source_map.items()]
 
 # Add cleanup function to remove old sessions periodically
 def cleanup_old_sessions():
